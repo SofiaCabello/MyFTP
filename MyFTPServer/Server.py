@@ -1,10 +1,61 @@
-
 import socket
-import sys
 import os
+import fcntl
+import struct
+import subprocess
+import requests
 from multiprocessing import Process, Lock
+from concurrent.futures import ThreadPoolExecutor
 
-def handle_client(client_socket, client_address, lock):
+def get_public_ip():
+    try:
+        response = requests.get("https://api.ipify.org?format=json")
+        return response.json()["ip"]
+    except Exception as e:
+        print(f"[-] Failed to get public IP. Check your network connection. {e}")
+        return None
+
+
+def get_ip_address(interface_name='en0'):
+    try:
+        # 尝试通过socket获取IP地址
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            local_ip = socket.inet_ntoa(fcntl.ioctl(
+                s.fileno(),
+                0x8915,  # SIOCGIFADDR
+                struct.pack('256s', interface_name.encode('utf-8')[:15])
+            )[20:24])
+            return local_ip
+
+    except IOError:
+        # 如果通过socket获取失败，尝试通过ifconfig命令获取
+        try:
+            result = subprocess.check_output(['ifconfig', interface_name], universal_newlines=True)
+            lines = result.split('\n')
+            for line in lines:
+                if 'inet ' in line:
+                    words = line.split()
+                    return words[1]
+
+        except subprocess.CalledProcessError as e:
+            print(f"Error retrieving IP address: {e}")
+
+    return None
+
+
+def handle_client(client_socket, client_address, lock, current_connection_num):
+    """
+    处理客户端连接的函数。
+
+    Args:
+        client_socket: 客户端套接字对象。
+        client_address: 客户端地址。
+        lock: 线程锁对象。
+        current_connection_num: 当前连接数。
+
+    Returns:
+        None
+    """
     try:
         while True:
             command = client_socket.recv(1024).decode('utf-8')
@@ -66,26 +117,40 @@ def handle_client(client_socket, client_address, lock):
         with lock:
             print(f'[-] Disconnected from {client_address[0]}:{client_address[1]}')
 
+
     except Exception as e:
         print(f"[-] Error: {e}")
         client_socket.close()
         with lock:
             print(f'[-] Disconnected from {client_address[0]}:{client_address[1]}')
+
+    finally:
+        with lock:
+            current_connection_num[0] -= 1
+            print(f"   >> Current connection number: {current_connection_num[0]}")
             
 
 
 def main():
     try:
-        print('This FTP Server is running...')
-        print('Server IP:' + sys.argv[1])
-        print('Server Port:' + sys.argv[2])
+        # 询问用户是否使用公网IP
+        print("[+] Do you want to use public IP? (y/n)")
+        use_public_ip = input()
+        if use_public_ip == "y":
+            server_ip = get_public_ip()
+            print("[+] FTP Server running on public IP.")
+        else:
+            server_ip = get_ip_address('en0')
+            print("[+] FTP Server running on local IP.")
+        session_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        session_socket.bind(("", 0))
+        server_port = session_socket.getsockname()[1]
+        session_socket.listen(8)
+        print("[+] Server IP:" + server_ip)
+        print("[+] Server Dialog Port:" + str(server_port))
+        print("[+] You need to set the client's IP and port to connect to the server.")
 
-        # Socket创建
-        server_ip = sys.argv[1]
-        server_port = int(sys.argv[2])
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.bind(("", server_port))
-        server_socket.listen(16)
+        current_connection_num = [0]
 
         # 打印信息
         print(f'[+] Listening on {server_ip}:{server_port}')
@@ -93,11 +158,13 @@ def main():
         lock = Lock()
 
         while True:
-            client_socket, client_address = server_socket.accept()
+            client_socket, client_address = session_socket.accept()
             with lock:
-                print(f'[+] Accepted connection from {client_address[0]}:{client_address[1]}')
-            
-            p = Process(target=handle_client, args=(client_socket, client_address, lock))
+                current_connection_num[0] += 1
+                print(f"[+] Accepted connection from {client_address[0]}:{client_address[1]}")
+                print(f"   >> Current connection number: {current_connection_num[0]}")
+
+            p = Process(target=handle_client, args=(client_socket, client_address, lock, current_connection_num))
             p.start()
 
     except Exception as e:

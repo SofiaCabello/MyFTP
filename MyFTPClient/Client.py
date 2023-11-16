@@ -1,8 +1,7 @@
-# TODO: 也许客户端不需要做多线程。但是做个CLI界面还是有必要的
-
 import socket
 import os
 import sys
+from multiprocessing import Process
 
 
 # 借鉴来的进度条
@@ -110,12 +109,12 @@ def main():
         # 下载文件
         elif command_list[0] == "get":
             file_name = command_list[1]
-            get(client_socket, file_name)
+            p = Process(target=get, args=(client_socket, file_name))
 
         # 上传文件
         elif command_list[0] == "put":
             file_name = command_list[1]
-            put(client_socket, file_name)
+            p = Process(target=put, args=(client_socket, file_name))
 
         # 退出
         elif command_list[0] == "exit":
@@ -132,7 +131,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
-
-
