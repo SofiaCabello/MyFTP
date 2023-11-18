@@ -1,30 +1,8 @@
 import socket
 import os
 import sys
-from multiprocessing import Process
+import threading
 
-
-# 借鉴来的进度条
-def printProgress(iteration, total, prefix='', suffix='', decimals=1, barLength=100):
-    """
-    Call in a loop to create a terminal progress bar
-    @params:
-        iteration   - Required  : current iteration (Int)
-        total       - Required  : total iterations (Int)
-        prefix      - Optional  : prefix string (Str)
-        suffix      - Optional  : suffix string (Str)
-        decimals    - Optional  : positive number of decimals in percent complete (Int)
-        barLength   - Optional  : character length of bar (Int)
-    """
-    import sys
-    formatStr = "{0:." + str(decimals) + "f}"
-    percent = formatStr.format(100 * (iteration / float(total)))
-    filledLength = int(round(barLength * iteration / float(total)))
-    bar = '#' * filledLength + '-' * (barLength - filledLength)
-    sys.stdout.write('\r%s |%s| %s%s %s' % (prefix, bar, percent, '%', suffix)),
-    if iteration == total:
-        sys.stdout.write('\n')
-    sys.stdout.flush()
 
 def get(client_socket, filename):
     client_socket.send(f"get {filename}".encode("utf-8"))
@@ -42,7 +20,8 @@ def get(client_socket, filename):
                 break
             f.write(buffer)
             buffer_bytes += len(buffer)
-            printProgress(buffer_bytes, int(file_size), prefix='Progress:', suffix='Complete', barLength=50)
+
+    print(f"[+] {filename} downloaded successfully")
     
 def put(client_socket, filename):
     if not os.path.isfile(filename):
@@ -55,7 +34,6 @@ def put(client_socket, filename):
     with open(filename, "rb") as f:
         for chunk in iter(lambda: f.read(1024), b""):
             client_socket.send(chunk)
-            printProgress(f.tell(), file_size, prefix='Progress:', suffix='Complete', barLength=50)
 
     print(f"[+] {filename} uploaded successfully")
 
@@ -95,26 +73,31 @@ def main():
         if command_list[0] == "ls":
             client_socket.send("ls".encode("utf-8"))
             data = client_socket.recv(1024)
-            print(data.decode("utf-8"))
+            for dir in data.decode("utf-8").split('\n'):
+                print("     | " + dir)
 
         # 进入目录
         elif command_list[0] == "cd":
             client_socket.send(command.encode("utf-8"))
             data = client_socket.recv(1024)
             if data.decode("utf-8") == "success":
-                print("Change directory success")
+                print("     < Change directory success")
             else:
                 print("Directory not exists")
 
         # 下载文件
         elif command_list[0] == "get":
             file_name = command_list[1]
-            p = Process(target=get, args=(client_socket, file_name))
+            t = threading.Thread(target=get, args=(client_socket, file_name))
+            t.start()
+            t.join()
 
         # 上传文件
         elif command_list[0] == "put":
             file_name = command_list[1]
-            p = Process(target=put, args=(client_socket, file_name))
+            t = threading.Thread(target=put, args=(client_socket, file_name))
+            t.start()
+            t.join()
 
         # 退出
         elif command_list[0] == "exit":

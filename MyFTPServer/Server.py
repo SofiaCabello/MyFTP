@@ -43,7 +43,7 @@ def get_ip_address(interface_name='en0'):
     return None
 
 
-def handle_client(client_socket, client_address, lock, current_connection_num):
+def handle_client(client_socket, client_address, lock):
     """
     处理客户端连接的函数。
 
@@ -51,7 +51,6 @@ def handle_client(client_socket, client_address, lock, current_connection_num):
         client_socket: 客户端套接字对象。
         client_address: 客户端地址。
         lock: 线程锁对象。
-        current_connection_num: 当前连接数。
 
     Returns:
         None
@@ -124,12 +123,7 @@ def handle_client(client_socket, client_address, lock, current_connection_num):
         with lock:
             print(f'[-] Disconnected from {client_address[0]}:{client_address[1]}')
 
-    finally:
-        with lock:
-            current_connection_num[0] -= 1
-            print(f"   >> Current connection number: {current_connection_num[0]}")
             
-
 
 def main():
     try:
@@ -160,11 +154,9 @@ def main():
         while True:
             client_socket, client_address = session_socket.accept()
             with lock:
-                current_connection_num[0] += 1
                 print(f"[+] Accepted connection from {client_address[0]}:{client_address[1]}")
-                print(f"   >> Current connection number: {current_connection_num[0]}")
-
-            p = Process(target=handle_client, args=(client_socket, client_address, lock, current_connection_num))
+                
+            p = Process(target=handle_client, args=(client_socket, client_address, lock))
             p.start()
 
     except Exception as e:
