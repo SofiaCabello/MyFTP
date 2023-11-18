@@ -41,57 +41,78 @@ def get_ip_address(interface_name='en0'):
     return None
 
 async def handle_client(reader, writer):
-    while True:
-        command = (await reader.readline()).decode().strip()
-        command_list = command.split()
+    client_socket = writer.get_extra_info('socket')
+    print(f"[+] New client connected: {client_socket.getpeername()}")
+    try:
+        while True:
+            command = (await reader.readline()).decode().strip()
 
-        # 下载文件
-        if command_list[0] == "get":
-            filename = command_list[1]
-            if not os.path.isfile(filename):
-                writer.write("0\n".encode())
-                await writer.drain()
-                continue
+            if not command:
+                break
 
-            file_size = os.path.getsize(filename)
-            writer.write(f"{file_size}\n".encode())
-            await writer.drain()
+            command_list = command.split()
 
-            with open(filename, "rb") as f:
-                while True:
-                    chunk = f.read(1024)
-                    if not chunk:
-                        break
-                    writer.write(chunk)
+            # 下载文件
+            if command_list[0] == "get":
+                filename = command_list[1]
+                if not os.path.isfile(filename):
+                    writer.write("0\n".encode())
                     await writer.drain()
+                    continue
 
-        # 上传文件
-        elif command_list[0] == "put":
-            filename = command_list[1]
-            file_size = int(command_list[2])
+                file_size = os.path.getsize(filename)
+                writer.write(f"{file_size}\n".encode())
+                await writer.drain()
 
-            with open(filename, "wb") as f:
-                while file_size > 0:
-                    buffer = await reader.read(min(1024, file_size))
-                    f.write(buffer)
-                    file_size -= len(buffer)
+                with open(filename, "rb") as f:
+                    while True:
+                        chunk = f.read(1024)
+                        if not chunk:
+                            break
+                        writer.write(chunk)
+                        await writer.drain()
 
-        # 列出目录
-        elif command_list[0] == "ls":
-            dirs = "\n".join(os.listdir('.'))
-            writer.write(f"{dirs}\n".encode())
-            await writer.drain()
+            # 上传文件
+            elif command_list[0] == "put":
+                filename = command_list[1]
+                file_size = int(command_list[2])
 
-        # 切换目录
-        elif command_list[0] == "cd":
-            os.chdir(command_list[1])
-            writer.write("Directory changed successfully\n".encode())
-            await writer.drain()
+                with open(filename, "wb") as f:
+                    while file_size > 0:
+                        buffer = await reader.read(min(1024, file_size))
+                        f.write(buffer)
+                        file_size -= len(buffer)
 
-        # 退出
-        elif command_list[0] == "exit":
-            print("Client disconnected")
-            break
+            # 列出目录
+            elif command_list[0] == "ls":
+                dirs = "\n".join(os.listdir('.'))
+                writer.write(f"{dirs}\nEND_OF_LS\n".encode())
+                await writer.drain()
+
+            # 切换目录
+            elif command_list[0] == "cd":
+                try:
+                    os.chdir(command_list[1])
+                except NotADirectoryError:
+                    writer.write("[-] Not a directory\n".encode())
+                    await writer.drain()
+                    continue
+                except FileNotFoundError:
+                    writer.write("[-] Directory not found\n".encode())
+                    await writer.drain()
+                    continue
+                writer.write("[+] Directory changed successfully\n".encode())
+                await writer.drain()
+
+            # 退出
+            elif command_list[0] == "exit":
+                break
+    except Exception as e:
+        print(f"[-] Client disconnected: {client_socket.getpeername()}. Errorr: {e}")
+    finally:
+        print(f"[-] Client disconnected: {client_socket.getpeername()}")
+        writer.close()
+        await writer.wait_closed()
 
 async def main():
     print("[+] Do you want to use public IP? (y/n)")
@@ -104,7 +125,12 @@ async def main():
             return
     else:
         # 获取本机IP地址
-        server_ip = get_ip_address()
+        print("[+] Do you want to use localhost? (y/n)")
+        use_localhost = input()
+        if use_localhost == "y":
+            server_ip = "127.0.0.1"
+        else:
+            server_ip = get_ip_address()
         if not server_ip:
             print("[-] Failed to get local IP address. Exiting...")
             return
