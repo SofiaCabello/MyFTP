@@ -1,4 +1,6 @@
 *.jpg
 *.mp4
+*.zip
+check_sum*
 test.txt
 /resources/

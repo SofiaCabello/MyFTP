@@ -1,6 +1,16 @@
+#!/usr/bin/env python3
 import asyncio
 import os
+import hashlib
 from tqdm import tqdm
+
+
+def check_sum(filename, algorithm="sha256"):
+    hash_func = getattr(hashlib, algorithm)()
+    with open(filename, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_func.update(chunk)
+    return hash_func.hexdigest()
 
 async def get(reader, writer, filename):
     if not filename:

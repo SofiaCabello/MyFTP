@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import asyncio
 import fcntl
 import requests
@@ -5,6 +6,14 @@ import socket
 import struct
 import subprocess
 import os
+import hashlib
+
+def check_sum(filename, algorithm="sha256"):
+    hash_func = getattr(hashlib, algorithm)()
+    with open(filename, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_func.update(chunk)
+    return hash_func.hexdigest()
 
 def get_public_ip():
     try:
